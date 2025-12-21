@@ -15,8 +15,7 @@ Chaos Visualizer — это инструмент для численного м�
 
 1. Клонируйте репозиторий или скачайте проект:
 ```bash
-git clone <repository-url>
-cd Диплом
+git clone https://github.com/VladOZE/Chaos-Visualizer.git
 ```
 
 2. Создайте виртуальное окружение (рекомендуется):
@@ -59,7 +58,6 @@ python main.py
 ├── config/                 # Конфигурационные файлы
 │   └── default_params.json # Параметры по умолчанию
 ├── data/                  # Директория для сохранения результатов
-├── logs/                  # Логи приложения
 ├── src/                   # Исходный код
 │   ├── main.py           # Точка входа
 │   ├── logger.py         # Настройка логирования
