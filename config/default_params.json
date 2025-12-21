@@ -1,0 +1,74 @@
+{
+  "systems": {
+    "lorenz": {
+      "name": "Lorenz System",
+      "description": "Система Лоренца - упрощённая модель атмосферной конвекции",
+      "parameters": {
+        "sigma": {
+          "value": 10.0,
+          "min": 0.1,
+          "max": 100.0,
+          "description": "Число Прандтля (σ)"
+        },
+        "rho": {
+          "value": 28.0,
+          "min": 0.1,
+          "max": 100.0,
+          "description": "Число Рэлея (ρ)"
+        },
+        "beta": {
+          "value": 2.6666666667,
+          "min": 0.1,
+          "max": 50.0,
+          "description": "Параметр геометрии (β = 8/3)"
+        }
+      },
+      "initial_conditions": {
+        "x0": 0.1,
+        "y0": 1.0,
+        "z0": 1.0
+      }
+    },
+    "rossler": {
+      "name": "Rossler Attractor",
+      "description": "Аттрактор Рёсслера",
+      "parameters": {
+        "a": {
+          "value": 0.1,
+          "min": 0.01,
+          "max": 1.0,
+          "description": "Параметр a"
+        },
+        "b": {
+          "value": 0.1,
+          "min": 0.01,
+          "max": 1.0,
+          "description": "Параметр b"
+        },
+        "c": {
+          "value": 14.0,
+          "min": 1.0,
+          "max": 30.0,
+          "description": "Параметр c"
+        }
+      },
+      "initial_conditions": {
+        "x0": 0.1,
+        "y0": 1.0,
+        "z0": 1.0
+      }
+    }
+  },
+  "integration": {
+    "method": "RK45",
+    "default_steps": 5000,
+    "rtol": 1e-6,
+    "atol": 1e-9,
+    "max_step": null
+  },
+  "visualization": {
+    "matplotlib_figsize": [10, 8],
+    "matplotlib_dpi": 100,
+    "plotly_colormap": "Viridis"
+  }
+}
