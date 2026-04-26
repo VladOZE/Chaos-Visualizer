@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QSpinBox, QDoubleSpinBox, QTabWidget,
     QMessageBox, QFileDialog, QGroupBox, QFormLayout, QProgressBar,
-    QSlider, QScrollArea
+    QSlider, QScrollArea, QLineEdit
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont
@@ -22,6 +22,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 sys.path.insert(0, '..')
 from models.lorenz import LorenzSystem
 from models.rossler import RosslerSystem
+from models.custom_system import CustomEquationSystem
 from integration.integrator import ODEIntegrator
 from visualization.matplotlib_plots import MatplotlibPlotter
 from visualization.plotly_plots import PlotlyVisualizer
@@ -45,22 +46,68 @@ class IntegrationWorker(QThread):
         self.integrator = integrator
         self.initial_state = initial_state
         self.num_points = num_points
+        self._cancel_requested = False
+
+    def request_cancel(self):
+        """Запрашивает остановку вычислений."""
+        self._cancel_requested = True
+        self.requestInterruption()
     
     def run(self):
         try:
             self.progress_signal.emit(10)
-            
-            # Интегрирование
-            t_span = (0, self.num_points * 0.01)  # 0.01 - единица времени на итерацию
-            t_eval = np.linspace(t_span[0], t_span[1], self.num_points)
-            
-            t, trajectory = self.integrator.integrate(
-                self.dynamics_system.compute_derivatives,
-                self.initial_state,
-                t_span,
-                t_eval=t_eval
-            )
-            
+
+            if self._cancel_requested or self.isInterruptionRequested():
+                return
+
+            if hasattr(self.dynamics_system, "simulate"):
+                t, trajectory = self.dynamics_system.simulate(self.initial_state, self.num_points)
+            else:
+                # Интегрирование ОДУ частями, чтобы пользователь мог прервать расчёт.
+                dt = 0.01
+                chunk_size = 500
+                total_points = int(self.num_points)
+                t_parts = []
+                y_parts = []
+                current_state = np.array(self.initial_state, dtype=float)
+                start_idx = 0
+
+                while start_idx < total_points:
+                    if self._cancel_requested or self.isInterruptionRequested():
+                        return
+
+                    end_idx = min(start_idx + chunk_size, total_points)
+                    local_count = end_idx - start_idx
+                    t0 = start_idx * dt
+                    t1 = max(t0 + dt, end_idx * dt)
+                    t_eval = np.linspace(t0, t1, local_count)
+
+                    t_chunk, y_chunk = self.integrator.integrate(
+                        self.dynamics_system.compute_derivatives,
+                        current_state,
+                        (t0, t1),
+                        t_eval=t_eval
+                    )
+
+                    if start_idx > 0:
+                        t_chunk = t_chunk[1:]
+                        y_chunk = y_chunk[1:]
+
+                    if len(t_chunk) == 0 or len(y_chunk) == 0:
+                        raise RuntimeError("Интегратор вернул пустой результат")
+
+                    t_parts.append(t_chunk)
+                    y_parts.append(y_chunk)
+                    current_state = y_chunk[-1]
+                    start_idx = end_idx
+                    progress = 10 + int(90 * start_idx / total_points)
+                    self.progress_signal.emit(min(progress, 99))
+
+                t = np.concatenate(t_parts)
+                trajectory = np.concatenate(y_parts, axis=0)
+
+            if self._cancel_requested or self.isInterruptionRequested():
+                return
             self.progress_signal.emit(100)
             self.completed_signal.emit(t, trajectory)
         
@@ -80,7 +127,8 @@ class ChaosVisualizerApp(QMainWindow):
         # Инициализация компонентов
         self.systems = {
             'Лоренц': LorenzSystem(),
-            'Рёсслер': RosslerSystem()
+            'Рёсслер': RosslerSystem(),
+            'Пользовательская': CustomEquationSystem(),
         }
         self.current_system = self.systems['Лоренц']
         self.integrator = ODEIntegrator(method='RK45', verbose=True)
@@ -130,15 +178,30 @@ class ChaosVisualizerApp(QMainWindow):
         
         model_group.setLayout(model_layout)
         left_panel.addWidget(model_group)
+
+        # Пользовательские уравнения
+        self.custom_eq_group = QGroupBox("Пользовательские уравнения")
+        custom_eq_layout = QFormLayout()
+        self.dx_input = QLineEdit("10*(y-x)")
+        self.dy_input = QLineEdit("x*(28-z)-y")
+        self.dz_input = QLineEdit("x*y-2.6666666667*z")
+        self.dx_input.setPlaceholderText("например: 10*(y-x)")
+        self.dy_input.setPlaceholderText("например: x*(28-z)-y")
+        self.dz_input.setPlaceholderText("например: x*y-2.666*z")
+        custom_eq_layout.addRow("dx/dt =", self.dx_input)
+        custom_eq_layout.addRow("dy/dt =", self.dy_input)
+        custom_eq_layout.addRow("dz/dt =", self.dz_input)
+        self.custom_eq_group.setLayout(custom_eq_layout)
+        left_panel.addWidget(self.custom_eq_group)
         
         # Параметры системы
-        params_group = QGroupBox("Параметры")
+        self.params_group = QGroupBox("Параметры")
         self.params_layout = QFormLayout()
         self.param_inputs = {}
         
         self.update_parameter_inputs()
-        params_group.setLayout(self.params_layout)
-        left_panel.addWidget(params_group)
+        self.params_group.setLayout(self.params_layout)
+        left_panel.addWidget(self.params_group)
         
         # Начальные условия
         init_group = QGroupBox("Начальные условия")
@@ -180,6 +243,13 @@ class ChaosVisualizerApp(QMainWindow):
         self.run_button.setToolTip("Запустить численное моделирование с текущими параметрами")
         self.run_button.clicked.connect(self.run_simulation)
         left_panel.addWidget(self.run_button)
+
+        self.stop_button = QPushButton("■ Остановить моделирование")
+        self.stop_button.setStyleSheet("background-color: #b42318; color: white; font-weight: bold;")
+        self.stop_button.setToolTip("Прервать текущее моделирование")
+        self.stop_button.clicked.connect(self.stop_simulation)
+        self.stop_button.setEnabled(False)
+        left_panel.addWidget(self.stop_button)
 
         self.reset_button = QPushButton("↻ Сбросить параметры")
         self.reset_button.setStyleSheet("background-color: #d92d20; color: white; font-weight: bold;")
@@ -393,6 +463,8 @@ class ChaosVisualizerApp(QMainWindow):
         
         central_widget.setLayout(main_layout)
         self.update_controls_visibility()
+        self.custom_eq_group.setVisible(self.model_combo.currentText() == "Пользовательская")
+        self.params_group.setVisible(self.model_combo.currentText() != "Пользовательская")
         
 
     def update_parameter_inputs(self):
@@ -419,6 +491,8 @@ class ChaosVisualizerApp(QMainWindow):
         """Обработчик смены модели системы."""
         self.current_system = self.systems[system_name]
         self.update_parameter_inputs()
+        self.custom_eq_group.setVisible(system_name == "Пользовательская")
+        self.params_group.setVisible(system_name != "Пользовательская")
         self.info_label.setText(f"Выбрана система: {system_name}")
         self.logger.info(f"Пользователь выбрал систему: {system_name}")
     
@@ -457,9 +531,17 @@ class ChaosVisualizerApp(QMainWindow):
         try:
             # Получаем параметры
             params = {name: spinbox.value() for name, spinbox in self.param_inputs.items()}
-            
+
             if not self.current_system.set_parameters(**params):
                 raise ValueError("Ошибка при установке параметров")
+
+            if isinstance(self.current_system, CustomEquationSystem):
+                if not self.current_system.set_equations(
+                    self.dx_input.text(),
+                    self.dy_input.text(),
+                    self.dz_input.text(),
+                ):
+                    raise ValueError("Некорректные пользовательские уравнения")
             
             # Начальные условия
             initial_state = np.array([
@@ -476,6 +558,7 @@ class ChaosVisualizerApp(QMainWindow):
             self.info_label.setText("Моделирование в процессе...")
             self.progress_bar.setValue(0)
             self.run_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
             self.start_wall_time = time.perf_counter()
             self.stop_live_draw()
             self.logger.info(
@@ -499,6 +582,23 @@ class ChaosVisualizerApp(QMainWindow):
             self.logger.error(f"Ошибка при запуске моделирования: {e}")
             QMessageBox.critical(self, "Ошибка", f"Ошибка при запуске моделирования:\n{str(e)}")
             self.run_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+
+    def stop_simulation(self):
+        """Прерывает моделирование по запросу пользователя."""
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.request_cancel()
+            self.info_label.setText("Остановка моделирования...")
+            # Fallback: если поток не остановился сам, завершаем принудительно.
+            QTimer.singleShot(1000, self._force_stop_worker_if_needed)
+
+    def _force_stop_worker_if_needed(self):
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.terminate()
+            self.worker.wait(500)
+            self.info_label.setText("Моделирование остановлено пользователем")
+            self.run_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
     
     def update_progress(self, value):
         """Обновляет прогресс-бар."""
@@ -530,6 +630,7 @@ class ChaosVisualizerApp(QMainWindow):
             QMessageBox.critical(self, "Ошибка визуализации", str(exc))
         finally:
             self.run_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
             self.progress_bar.setValue(100)
     
     def on_simulation_error(self, error_msg):
@@ -538,6 +639,7 @@ class ChaosVisualizerApp(QMainWindow):
         QMessageBox.critical(self, "Ошибка при моделировании", error_msg)
         self.info_label.setText("✗ Ошибка при моделировании")
         self.run_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
     
     def plot_results(self):
         """Отображает результаты моделирования."""
@@ -560,6 +662,11 @@ class ChaosVisualizerApp(QMainWindow):
         x_idx, y_idx = self.anim2d_x_idx, self.anim2d_y_idx
         x = self.trajectory[:, x_idx]
         y = self.trajectory[:, y_idx]
+        finite_mask = np.isfinite(x) & np.isfinite(y)
+        x = x[finite_mask]
+        y = y[finite_mask]
+        if x.size == 0 or y.size == 0:
+            raise ValueError("Траектория содержит только неконечные значения для 2D проекции")
         ax.plot(x, y, 'b-', linewidth=0.5, alpha=0.8)
         labels = ['x', 'y', 'z']
         lbl_x = labels[x_idx] if x_idx < len(labels) else f'axis {x_idx}'
@@ -579,6 +686,12 @@ class ChaosVisualizerApp(QMainWindow):
         x = self.trajectory[:, 0]
         y = self.trajectory[:, 1]
         z = self.trajectory[:, 2]
+        finite_mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(z)
+        if not np.any(finite_mask):
+            raise ValueError("Траектория содержит только неконечные значения")
+        x = x[finite_mask]
+        y = y[finite_mask]
+        z = z[finite_mask]
         ax.plot(x, y, z, 'b-', linewidth=0.6, alpha=0.9)
         ax.scatter(x[0], y[0], z[0], c='green', s=30, label='Начало')
         ax.scatter(x[-1], y[-1], z[-1], c='red', s=30, label='Конец')
@@ -726,6 +839,9 @@ class ChaosVisualizerApp(QMainWindow):
         x_idx, y_idx = self.anim2d_x_idx, self.anim2d_y_idx
         full_x = self.trajectory[:, x_idx]
         full_y = self.trajectory[:, y_idx]
+        finite_2d = np.isfinite(full_x) & np.isfinite(full_y)
+        full_x = full_x[finite_2d]
+        full_y = full_y[finite_2d]
         # Устанавливаем пределы так, чтобы вся траектория была в рамках с небольшим запасом
         if full_x.size > 0 and full_y.size > 0:
             margin_x = 0.05 * (full_x.max() - full_x.min() or 1.0)
@@ -820,12 +936,18 @@ class ChaosVisualizerApp(QMainWindow):
 
     def apply_axis_scale(self, ax, x, y, z):
         """Применяет масштабирование осей 3D по текущему scale_factor."""
+        finite_mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(z)
+        if not np.any(finite_mask):
+            return
+        x_f = x[finite_mask]
+        y_f = y[finite_mask]
+        z_f = z[finite_mask]
         max_range = max(
-            np.ptp(x) if np.ptp(x) > 0 else 1.0,
-            np.ptp(y) if np.ptp(y) > 0 else 1.0,
-            np.ptp(z) if np.ptp(z) > 0 else 1.0
+            np.ptp(x_f) if np.ptp(x_f) > 0 else 1.0,
+            np.ptp(y_f) if np.ptp(y_f) > 0 else 1.0,
+            np.ptp(z_f) if np.ptp(z_f) > 0 else 1.0
         ) * self.scale_factor
-        cx, cy, cz = np.mean(x), np.mean(y), np.mean(z)
+        cx, cy, cz = np.mean(x_f), np.mean(y_f), np.mean(z_f)
         ax.set_xlim(cx - max_range/2, cx + max_range/2)
         ax.set_ylim(cy - max_range/2, cy + max_range/2)
         ax.set_zlim(cz - max_range/2, cz + max_range/2)
@@ -853,6 +975,9 @@ class ChaosVisualizerApp(QMainWindow):
                 x_idx, y_idx = self.anim2d_x_idx, self.anim2d_y_idx
                 full_x = self.trajectory[:, x_idx]
                 full_y = self.trajectory[:, y_idx]
+                finite_2d = np.isfinite(full_x) & np.isfinite(full_y)
+                full_x = full_x[finite_2d]
+                full_y = full_y[finite_2d]
                 if full_x.size > 0 and full_y.size > 0:
                     margin_x = 0.05 * (full_x.max() - full_x.min() or 1.0)
                     margin_y = 0.05 * (full_y.max() - full_y.min() or 1.0)
