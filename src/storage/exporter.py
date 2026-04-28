@@ -13,6 +13,7 @@ from typing import Optional, Dict, List
 from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
+from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
 
 from logger import get_logger
 
@@ -191,46 +192,58 @@ class ResultsExporter:
             
             fig = plt.figure(figsize=(10, 8))
             ax = fig.add_subplot(111, projection='3d')
-            
-            images = []
-            
-            # Генерируем кадры
-            step = max(1, len(trajectory) // 100)  # Макс 100 кадров
-            for i in range(0, len(trajectory), step):
-                ax.clear()
-                ax.plot(trajectory[:i, 0], trajectory[:i, 1], trajectory[:i, 2],
-                       'b-', linewidth=0.5, alpha=0.8)
-                ax.scatter(trajectory[i, 0], trajectory[i, 1], trajectory[i, 2],
-                          c='red', s=100)
-                ax.set_xlabel('X')
-                ax.set_ylabel('Y')
-                ax.set_zlabel('Z')
-                ax.set_title(f'Attractor Formation (step {i})')
-                
-                # Конвертируем в изображение
-                fig.canvas.draw()
-                width, height = fig.canvas.get_width_height()
-                image = np.frombuffer(fig.canvas.buffer_rgba(), dtype='uint8')
-                image = image.reshape((height, width, 4))
-                images.append(image[:, :, :3])
-            
-            plt.close(fig)
-            
-            # Сохраняем анимацию
-            import imageio
+
+            step = max(1, len(trajectory) // 240)  # до ~240 кадров
+            frame_indices = list(range(1, len(trajectory), step))
+            if not frame_indices:
+                frame_indices = [len(trajectory) - 1]
+            elif frame_indices[-1] != len(trajectory) - 1:
+                frame_indices.append(len(trajectory) - 1)
+
+            x = trajectory[:, 0]
+            y = trajectory[:, 1] if trajectory.shape[1] > 1 else np.zeros_like(x)
+            z = trajectory[:, 2] if trajectory.shape[1] > 2 else np.zeros_like(x)
+            line, = ax.plot([], [], [], 'b-', linewidth=0.8, alpha=0.9)
+            point = ax.scatter([], [], [], c='red', s=40)
+
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+            ax.set_xlim(np.min(x), np.max(x))
+            ax.set_ylim(np.min(y), np.max(y))
+            ax.set_zlim(np.min(z), np.max(z))
+
+            def update(frame_idx):
+                segment = trajectory[:frame_idx + 1]
+                line.set_data(segment[:, 0], segment[:, 1])
+                line.set_3d_properties(segment[:, 2] if segment.shape[1] > 2 else np.zeros(len(segment)))
+                point._offsets3d = ([segment[-1, 0]], [segment[-1, 1]], [segment[-1, 2] if segment.shape[1] > 2 else 0.0])
+                ax.set_title(f'Attractor Formation (step {frame_idx})')
+                return line, point
+
+            anim = FuncAnimation(
+                fig,
+                update,
+                frames=frame_indices,
+                interval=interval,
+                blit=False,
+                repeat=False,
+            )
+
             fps = max(1, 1000 // interval)
             if filename.endswith('.gif'):
-                imageio.mimsave(str(file_path), images, fps=fps)
+                anim.save(str(file_path), writer=PillowWriter(fps=fps))
             elif filename.endswith('.mp4'):
-                # macro_block_size=1 убирает предупреждение о ресайзе,
-                # но может снизить совместимость со старыми плеерами
-                imageio.mimsave(str(file_path), images, fps=fps, macro_block_size=1)
-            
+                anim.save(str(file_path), writer=FFMpegWriter(fps=fps))
+            else:
+                raise ValueError("Поддерживаются только .gif и .mp4")
+
+            plt.close(fig)
             self.logger.info(f"Анимация сохранена: {file_path}")
             return str(file_path)
         
         except ImportError:
-            self.logger.error("Для сохранения анимаций требуется imageio и imageio-ffmpeg")
+            self.logger.error("Для сохранения анимаций требуется pillow (GIF) и ffmpeg (MP4)")
             return None
         except Exception as e:
             self.logger.error(f"Ошибка при создании анимации: {e}")

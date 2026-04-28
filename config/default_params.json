@@ -1,74 +1,279 @@
 {
+  "application": {
+    "title": "Хаотические системы - Визуализатор",
+    "version": "2.0.0",
+    "language": "ru",
+    "theme": "default"
+  },
   "systems": {
     "lorenz": {
-      "name": "Lorenz System",
-      "description": "Система Лоренца - упрощённая модель атмосферной конвекции",
+      "name": "Лоренц",
+      "display_name": "Система Лоренца",
+      "description": "Система Лоренца - упрощённая модель атмосферной конвекции. Классический пример хаотической системы.",
+      "enabled": true,
       "parameters": {
         "sigma": {
           "value": 10.0,
           "min": 0.1,
           "max": 100.0,
+          "step": 0.1,
+          "decimals": 2,
           "description": "Число Прандтля (σ)"
         },
         "rho": {
           "value": 28.0,
           "min": 0.1,
           "max": 100.0,
-          "description": "Число Рэлея (ρ)"
+          "step": 0.1,
+          "decimals": 2,
+          "description": "Число Рэлея (ρ) - параметр интенсивности нагрева"
         },
         "beta": {
           "value": 2.6666666667,
           "min": 0.1,
           "max": 50.0,
+          "step": 0.1,
+          "decimals": 4,
           "description": "Параметр геометрии (β = 8/3)"
         }
       },
       "initial_conditions": {
-        "x0": 0.1,
+        "x0": 1.0,
         "y0": 1.0,
-        "z0": 1.0
+        "z0": 1.0,
+        "description": "Начальные условия для демонстрации аттрактора"
+      },
+      "chaos_regime": {
+        "sigma": 10.0,
+        "rho": 28.0,
+        "beta": 2.6666666667,
+        "description": "Классические параметры для хаотического режима"
       }
     },
     "rossler": {
-      "name": "Rossler Attractor",
-      "description": "Аттрактор Рёсслера",
+      "name": "Рёсслер",
+      "display_name": "Аттрактор Рёсслера",
+      "description": "Аттрактор Рёсслера - более простой странный аттрактор в сравнении с Лоренцем.",
+      "enabled": true,
       "parameters": {
         "a": {
           "value": 0.1,
           "min": 0.01,
           "max": 1.0,
-          "description": "Параметр a"
+          "step": 0.01,
+          "decimals": 3,
+          "description": "Параметр a (обычно фиксирован около 0.1)"
         },
         "b": {
           "value": 0.1,
           "min": 0.01,
           "max": 1.0,
-          "description": "Параметр b"
+          "step": 0.01,
+          "decimals": 3,
+          "description": "Параметр b (обычно фиксирован около 0.1)"
         },
         "c": {
           "value": 14.0,
           "min": 1.0,
           "max": 30.0,
-          "description": "Параметр c"
+          "step": 0.1,
+          "decimals": 2,
+          "description": "Параметр c (контролирует период между спиралями)"
         }
       },
       "initial_conditions": {
         "x0": 0.1,
         "y0": 1.0,
-        "z0": 1.0
+        "z0": 1.0,
+        "description": "Начальные условия для демонстрации аттрактора"
+      },
+      "chaos_regime": {
+        "a": 0.1,
+        "b": 0.1,
+        "c": 14.0,
+        "description": "Стандартные параметры для хаотического режима"
+      }
+    },
+    "chua": {
+      "name": "Чуа",
+      "display_name": "Система Чуа (Цепь Чуа)",
+      "description": "Система Чуа - хаотическая электрическая цепь. Первая электрическая система, для которой был строго доказан хаос.",
+      "enabled": true,
+      "parameters": {
+        "a": {
+          "value": 11.0,
+          "min": 0.1,
+          "max": 50.0,
+          "step": 0.1,
+          "decimals": 2,
+          "description": "Параметр a (масштаб)"
+        },
+        "b": {
+          "value": 14.0,
+          "min": 1.0,
+          "max": 100.0,
+          "step": 0.5,
+          "decimals": 1,
+          "description": "Параметр b (масштаб)"
+        },
+        "m0": {
+          "value": -0.71,
+          "min": -5.0,
+          "max": 0.0,
+          "step": 0.01,
+          "decimals": 2,
+          "description": "Коэффициент m0 нелинейной функции h(x)"
+        },
+        "m1": {
+          "value": -0.46,
+          "min": -2.0,
+          "max": 0.0,
+          "step": 0.01,
+          "decimals": 2,
+          "description": "Коэффициент m1 нелинейной функции h(x)"
+        }
+      },
+      "initial_conditions": {
+        "x0": 0.5,
+        "y0": 0.5,
+        "z0": 0.5,
+        "description": "Начальные условия для демонстрации аттрактора"
+      },
+      "chaos_regime": {
+        "a": 11.0,
+        "b": 14.0,
+        "m0": -0.71,
+        "m1": -0.46,
+        "description": "Стандартные параметры для хаотического режима"
+      }
+    },
+    "custom": {
+      "name": "Пользовательская",
+      "display_name": "Пользовательская система ОДУ",
+      "description": "Система с пользовательскими уравнениями. Позволяет вводить произвольные выражения через интерфейс.",
+      "enabled": true,
+      "parameters": {},
+      "initial_conditions": {
+        "x0": 1.0,
+        "y0": 1.0,
+        "z0": 1.0,
+        "description": "Начальные условия"
+      },
+      "example_equations": {
+        "lorenz_copy": {
+          "description": "Система Лоренца",
+          "dx": "10*(y - x)",
+          "dy": "x*(28 - z) - y",
+          "dz": "x*y - 8/3*z"
+        },
+        "rossler_copy": {
+          "description": "Система Рёсслера",
+          "dx": "-y - z",
+          "dy": "x + 0.1*y",
+          "dz": "0.1 + z*(x - 14)"
+        },
+        "simple_chaos": {
+          "description": "Простая хаотическая система",
+          "dx": "y",
+          "dy": "z",
+          "dz": "-x - 2.5*y - z + 10*sin(t)"
+        }
       }
     }
   },
   "integration": {
     "method": "RK45",
-    "default_steps": 5000,
+    "description": "Метод Рунге-Кутты 4-5 порядка",
+    "default_steps": 3000,
     "rtol": 1e-6,
     "atol": 1e-9,
-    "max_step": null
+    "max_step": null,
+    "chunk_size": 500,
+    "time_span": [0, 100]
+  },
+  "ui": {
+    "window": {
+      "title": "Хаотические системы - Визуализатор",
+      "geometry": {
+        "width": 1600,
+        "height": 900,
+        "x": 100,
+        "y": 100
+      }
+    },
+    "fonts": {
+      "main": "Arial",
+      "size_label": 10,
+      "size_title": 12,
+      "size_button": 10
+    },
+    "colors": {
+      "background": "#ffffff",
+      "text": "#000000",
+      "accent": "#0066cc"
+    }
   },
   "visualization": {
-    "matplotlib_figsize": [10, 8],
-    "matplotlib_dpi": 100,
-    "plotly_colormap": "Viridis"
+    "plot_2d": {
+      "figsize": [8, 6],
+      "dpi": 100,
+      "colormap": "viridis",
+      "markersize": 2
+    },
+    "plot_3d": {
+      "figsize": [10, 8],
+      "dpi": 100,
+      "colormap": "viridis",
+      "markersize": 1,
+      "elev": 30,
+      "azim": 45
+    },
+    "animation": {
+      "figsize": [10, 8],
+      "dpi": 80,
+      "colormap": "viridis",
+      "fps": 20,
+      "interval": 50
+    },
+    "plotly": {
+      "colormap": "Viridis",
+      "marker_size": 3,
+      "line_width": 1
+    }
+  },
+  "export": {
+    "png": {
+      "dpi": 150,
+      "quality": "high",
+      "bbox_inches": "tight"
+    },
+    "svg": {
+      "format": "svg",
+      "bbox_inches": "tight"
+    },
+    "animation_gif": {
+      "duration": 0.05,
+      "loop": 0,
+      "optimize": false
+    },
+    "animation_mp4": {
+      "codec": "libx264",
+      "fps": 20,
+      "bitrate": "5000k"
+    },
+    "default_path": "./exports",
+    "auto_timestamp": true
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file": "./logs/chaos_visualizer.log",
+    "console": true,
+    "file_enabled": true
+  },
+  "performance": {
+    "max_trajectory_points": 100000,
+    "live_plot_update_interval": 100,
+    "progress_bar_update_interval": 10
   }
 }
