@@ -42,6 +42,19 @@ class RosslerSystem(DynamicalSystem):
             'c': (1.0, 30.0)
         }
         
+        # Пытаемся загрузить параметры из конфига
+        try:
+            from config_loader import get_config_loader
+            config = get_config_loader()
+            config_params = config.get_system_parameters('rossler')
+            for param_name, param_info in config_params.items():
+                if isinstance(param_info, dict) and 'value' in param_info:
+                    self.default_parameters[param_name] = param_info['value']
+                if isinstance(param_info, dict) and 'min' in param_info and 'max' in param_info:
+                    self.parameter_ranges[param_name] = (param_info['min'], param_info['max'])
+        except Exception as e:
+            self.logger.warning(f"Не удалось загрузить параметры из конфига: {e}")
+        
         self.parameters = self.default_parameters.copy()
     
     def compute_derivatives(self, t: float, state: np.ndarray) -> np.ndarray:

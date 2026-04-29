@@ -70,6 +70,12 @@ class ODEIntegrator:
             self.logger.error(error_msg)
             raise ValueError(error_msg)
         
+        # Валидация t_eval
+        if t_eval is not None and len(t_eval) == 0:
+            error_msg = "t_eval не может быть пустым массивом"
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
+        
         try:
             # Генерируем сетку для оценки если не задана
             if t_eval is None:
@@ -105,13 +111,27 @@ class ODEIntegrator:
                 if self.verbose:
                     print(warn_msg)
             
-            if self.verbose:
-                info_msg = f"Интегрирование успешно. Вычислено {len(solution.t)} точек."
-                self.logger.info(info_msg)
-                print(info_msg)
+            # Убеждаемся, что solution.y - это numpy array, а не список
+            y_result = solution.y
+            if not isinstance(y_result, np.ndarray):
+                y_result = np.array(y_result, dtype=float)
+            
+            # Обработка edge case: если solution.y имеет shape (n_vars,) вместо (n_vars, n_points)
+            # это происходит при одной точке или в некоторых edge cases
+            if y_result.ndim == 1:
+                y_result = y_result.reshape(-1, 1)
+            
+            # Убеждаемся, что solution.t - это numpy array
+            t_result = solution.t
+            if not isinstance(t_result, np.ndarray):
+                t_result = np.array(t_result, dtype=float)
             
             # Возвращаем транспонированное решение: (n_points, n_vars)
-            return solution.t, solution.y.T
+            # Гарантируем, что результат - это numpy array
+            result_t = np.asarray(t_result, dtype=float)
+            result_y = np.asarray(y_result.T, dtype=float)
+            
+            return result_t, result_y
         
         except Exception as e:
             error_msg = f"Ошибка при интегрировании: {str(e)}"

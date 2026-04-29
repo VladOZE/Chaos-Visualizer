@@ -42,12 +42,13 @@ class IntegrationWorker(QThread):
     completed_signal = pyqtSignal(np.ndarray, np.ndarray)
     error_signal = pyqtSignal(str)
     
-    def __init__(self, dynamics_system, integrator, initial_state, num_points):
+    def __init__(self, dynamics_system, integrator, initial_state, num_points, chunk_size=500):
         super().__init__()
         self.dynamics_system = dynamics_system
         self.integrator = integrator
         self.initial_state = initial_state
         self.num_points = num_points
+        self.chunk_size = chunk_size
         self._cancel_requested = False
     
     def request_cancel(self):
@@ -70,22 +71,45 @@ class IntegrationWorker(QThread):
             else:
                 # Для непрерывных систем - интегрируем частями
                 dt = 0.01
-                chunk_size = 500
                 total_points = int(self.num_points)
                 t_parts = []
                 y_parts = []
                 current_state = np.array(self.initial_state, dtype=float)
-                start_idx = 0
+                points_collected = 0
+                chunk_num = 0
                 
-                while start_idx < total_points:
+                while points_collected < total_points:
                     if self._cancel_requested or self.isInterruptionRequested():
                         self.error_signal.emit("Моделирование остановлено пользователем")
                         return
                     
-                    end_idx = min(start_idx + chunk_size, total_points)
-                    local_count = end_idx - start_idx
-                    t0 = start_idx * dt
-                    t1 = end_idx * dt
+                    # Вычисляем сколько точек осталось собрать
+                    remaining_points = total_points - points_collected
+                    
+                    # Для первого чанка - запрашиваем chunk_size точек
+                    # Для остальных - компенсируем потерю первой точки при удалении дубликата
+                    should_remove_first = False
+                    if chunk_num == 0:
+                        # Первый чанк: запрашиваем сколько просим
+                        local_count = min(self.chunk_size, remaining_points)
+                    else:
+                        # Для остальных: запрашиваем на 1 больше, чтобы после удаления первой точки 
+                        # осталось нужное количество (но только если не последний чанк)
+                        points_to_collect = min(self.chunk_size, remaining_points)
+                        if remaining_points > self.chunk_size:
+                            # Не последний чанк - запрашиваем экстра, будем удалять первую
+                            local_count = points_to_collect + 1
+                            should_remove_first = True
+                        else:
+                            # Последний чанк - не запрашиваем экстра
+                            local_count = points_to_collect
+                            should_remove_first = False
+                    
+                    if local_count <= 0:
+                        break
+                    
+                    t0 = points_collected * dt
+                    t1 = (points_collected + local_count - 1) * dt
                     t_eval = np.linspace(t0, t1, local_count)
                     
                     t_chunk, y_chunk = self.integrator.integrate(
@@ -95,24 +119,40 @@ class IntegrationWorker(QThread):
                         t_eval=t_eval
                     )
                     
-                    if start_idx > 0:
+                    # Убираем дубликат (первую точку) только если мы запросили экстра-точку
+                    if should_remove_first and len(t_chunk) > 0:
                         t_chunk = t_chunk[1:]
                         y_chunk = y_chunk[1:]
                     
                     if len(t_chunk) == 0 or len(y_chunk) == 0:
                         raise RuntimeError("Интегратор вернул пустой результат")
                     
+                    # Гарантируем numpy arrays
+                    t_chunk = np.asarray(t_chunk, dtype=float)
+                    y_chunk = np.asarray(y_chunk, dtype=float)
+                    
                     t_parts.append(t_chunk)
                     y_parts.append(y_chunk)
                     current_state = y_chunk[-1]
-                    start_idx = end_idx
+                    points_collected += len(y_chunk)
+                    chunk_num += 1
                     
                     # Отправляем прогресс
-                    progress = 10 + int(80 * start_idx / total_points)
+                    progress = 10 + int(80 * min(points_collected, total_points) / total_points)
                     self.progress_signal.emit(min(90, progress))
                 
-                t = np.concatenate(t_parts)
-                trajectory = np.concatenate(y_parts)
+                # Гарантируем корректное объединение
+                t = np.concatenate(t_parts, dtype=float) if len(t_parts) > 0 else np.array([], dtype=float)
+                trajectory = np.concatenate(y_parts, dtype=float) if len(y_parts) > 0 else np.array([], dtype=float)
+                
+                # Обрезаем до ровно requested_points если потребуется
+                if len(t) > total_points:
+                    t = t[:total_points]
+                    trajectory = trajectory[:total_points]
+                
+                # Двойная проверка типов перед отправкой
+                t = np.asarray(t, dtype=float)
+                trajectory = np.asarray(trajectory, dtype=float)
             
             self.progress_signal.emit(100)
             self.completed_signal.emit(t, trajectory)
@@ -631,11 +671,13 @@ class ChaosVisualizerApp(QMainWindow):
             )
             
             # Запускаем интегрирование в отдельном потоке
+            chunk_size = self.config.get_chunk_size()
             self.worker = IntegrationWorker(
                 self.current_system,
                 self.integrator,
                 initial_state,
-                num_points
+                num_points,
+                chunk_size=chunk_size
             )
             self.worker.progress_signal.connect(self.update_progress)
             self.worker.completed_signal.connect(self.on_simulation_complete)
@@ -713,7 +755,7 @@ class ChaosVisualizerApp(QMainWindow):
     def on_simulation_error(self, error_msg):
         """Обработчик ошибки моделирования."""
         self.logger.error(f"Ошибка моделирования: {error_msg}")
-        self.info_label.setText(f"✗ Ошибка: {error_msg[:70]}...")
+        self.info_label.setText(f"Ошибка: {error_msg[:70]}...")
         QMessageBox.critical(self, "Ошибка при моделировании", error_msg)
         self.run_button.setEnabled(True)
         self.stop_button.setEnabled(False)
@@ -769,7 +811,7 @@ class ChaosVisualizerApp(QMainWindow):
             self.logger.error("Траектория содержит только NaN/Inf значения")
             self.show_empty_plot_message(self.fig_3d, self.canvas_3d, 
                                        "Ошибка: траектория содержит только NaN значения")
-            self.info_label.setText("✗ Ошибка: траектория содержит NaN/Inf значения")
+            self.info_label.setText("Ошибка: траектория содержит NaN/Inf значения")
             return
         
         # Используем только конечные значения для отрисовки
