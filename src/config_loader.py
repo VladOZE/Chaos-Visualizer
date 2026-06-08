@@ -45,13 +45,13 @@ class ConfigLoader:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 self._config = json.load(f)
-            logger.info(f"✓ Конфигурация загружена: {config_path}")
+            logger.info(f"Конфигурация загружена: {config_path}")
             return self._config
         except FileNotFoundError:
-            logger.error(f"✗ Файл конфигурации не найден: {config_path}")
+            logger.error(f"Файл конфигурации не найден: {config_path}")
             raise
         except json.JSONDecodeError as e:
-            logger.error(f"✗ Ошибка при парсинге JSON: {e}")
+            logger.error(f"Ошибка при парсинге JSON: {e}")
             raise
     
     def get(self, path: str, default: Any = None) -> Any:

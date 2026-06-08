@@ -184,7 +184,7 @@
   "integration": {
     "method": "RK45",
     "description": "Метод Рунге-Кутты 4-5 порядка",
-    "default_steps": 3000,
+    "default_steps": 5000,
     "rtol": 1e-6,
     "atol": 1e-9,
     "max_step": null,
